@@ -12,6 +12,10 @@
 (define-runtime-path category-mapping-filename-path
   "./category-mapping-filename.rktd")
 
+;; oh dear... it occurs to me that representing a record as a
+;; hash table might actually make
+;; the job of the type checker easier, here...
+
 ;; incomplete?
 
 ;; text from wikipedia:
@@ -61,8 +65,8 @@
    (List 'T Real)
    (List 'Q Real)
    (List 'D Date)
-   ;; a split... contains both a label and an amount
-   (List 'Split String Real)
+   ;; the transaction splits, listing descriptions and amounts
+   (List 'Split (Listof (List String Real)))
    (List QifLetter (U String Real))))
 (define-predicate qif-element? QifRecordElt)
 (define-type QifRecord (cons (U 'std 'investment) (Listof QifRecordElt)))
@@ -128,22 +132,76 @@
   (define record-string-lists
     (filter (lambda (x) (not (empty? x)))
             (split-at-elt "^" non-blank-lines)))
-  
   (map (parse-record remove-leading-hash?) record-string-lists))
 
 ;; given whether to remove leading hashes, parse each line of a record
 (: parse-record (Boolean -> ((Listof String) -> QifRecord)))
 (define ((parse-record remove-leading-hash?) transaction-lines)
-  (ensure-no-duplicates
-   (cons 'std
-         (join-splits
-          (map (parse-line remove-leading-hash?) transaction-lines)))))
+  (define pre-elts
+    (map (parse-line remove-leading-hash?) transaction-lines))
+  (define-values (non-split-elts split-elts)
+    (partition qif-element? pre-elts))
+  (cons 'std
+        (eliminate-trivial-split
+         (ensure-no-duplicates
+          (append
+           non-split-elts
+           (list (ann (list 'Split
+                            (filter
+                             non-empty-split?
+                             (join-split-pairs split-elts)))
+                      QifRecordElt)))))))
 
-;; given a list of transaction lines, 
+;; given a transaction, drop the Split element if it contains only
+;; one split whose description matches the record's description or
+;; memo
+(define (eliminate-trivial-split [record : (Listof QifRecordElt)])
+  : (Listof QifRecordElt)
+  (define amount (record-numfield 'T record))
+  (match (assoc 'Split record)
+    [(list 'Split splits)
+     ;; can't quite figure out how to make the types help me here:
+     (define splitsy (cast splits (Listof (List String Real))))
+     (cond [(and
+             (= (length splitsy) 1)
+             (= (second (first splitsy))
+                amount)
+             (member (first (first splitsy))
+                     (list
+                      (record-strfield 'M record)
+                      (record-strfield 'P record)
+                      (record-strfield 'L record))))
+            ;; drop the split, it contains no new information:
+            (filter
+             (λ ([r : QifRecordElt])
+               (not (equal? (first r) 'Split)))
+             record)]
+           [else
+            record])]
+    [other record]))
+
+;; look up a "number" field
+(define (record-numfield [tag : Symbol] [r : (Listof QifRecordElt)]) : Real
+  (define lookup (assoc tag r))
+  (if lookup
+      (assert (second lookup) real?)
+      0.0))
+
+;; look up a "string" field
+(define (record-strfield [tag : Symbol] [r : (Listof QifRecordElt)])
+  : String
+  (define lookup (assoc tag r))
+  (if lookup
+      (assert (second lookup) string?)
+      ""))
+
+;; drop the empty splits
+(define (non-empty-split? (split : (List String Real))) : Boolean
+  (not (= (second split) 0)))
 
 ;; given a Record, signal an error if the record
 ;; contains duplicate fields, return it if not
-(: ensure-no-duplicates (QifRecord -> QifRecord))
+(: ensure-no-duplicates ((Listof QifRecordElt) -> (Listof QifRecordElt)))
 (define (ensure-no-duplicates r)
   (when (check-duplicates
          (map (ann first (QifRecordElt -> Any)) (rest r)))
@@ -153,7 +211,8 @@
   r)
 
 ;; join together pairs of "S" and "$" lines into split lines
-(define (join-splits [lines : (Listof QifRecordPreElt)]) : (Listof QifRecordElt)
+(define (join-split-pairs [lines : (Listof QifRecordPreElt)])
+  : (Listof (List String Real))
   ;; basically we need a little state machine here:
   ;; - init, and
   ;; - just-saw-S
@@ -168,8 +227,9 @@
           ;; would have used match, but it blew TR's mind.
           (cond
             [(qif-element? f)
-             (cons f
-                   (loop 'init (rest remaining)))]
+             (error 'join-split-pairs
+                    "qif elements should already be split out: ~e"
+                    f)]
             [(equal? 'S (first f))
              (loop (list 'just-saw-S (second f))
                    (rest remaining))]
@@ -183,7 +243,7 @@
                  "ran out of lines right after 'S'")]
          [else
           (match (first remaining)
-            [`($ ,amt) (cons (list 'Split label amt)
+            [`($ ,amt) (cons (list label amt)
                              (loop 'init (rest remaining)))]
             [other (error 'join-splits
                           "expected $ to follow S, got: ~e"
@@ -314,8 +374,6 @@
   '("" "WITHDRAW" "TRANSFER" "FEE" "PURCHASE" "DEPOSIT" "DIVIDEND"))
 
 ;; return payee and memo of transactions with no matching category.
-;; (Not sure if transes with existing category should be errors or
-;; treated as matched...)
 (define (payees-of-unmatched [r : QifRecord]) : (Listof String)
   (match (assq 'L (rest r))
     [(list 'L (? string? r))
@@ -334,10 +392,15 @@
      [#f '()])))
 
 (define (display-payees-of-unmatched [rs : (Listof QifRecord)]) : Void
-  (define strs (remove-duplicates (apply append (map payees-of-unmatched rs))))
-  (map display-missing-payee (sort strs string<?))
-  (printf "~v unmatched strings to potentially deal with.\n"
-          (length strs))
+  (define groups
+    ((inst sort (Listof (Listof String)) Index)
+     (group-by (λ (x) x) (map payees-of-unmatched rs))
+     (ann > (Index Index -> Boolean))
+     #:key (inst length Any)))
+  (for ([g (in-list groups)])
+    (when (< 1 (length g))
+      (printf ";; ~vx:\n" (length g)))
+    (map display-missing-payee (first g)))
   (void))
 
 ;; find a category by trying to match P, and then
@@ -614,7 +677,8 @@ T-62.60"))
                   (N "24323005347253020010308")
                   (P "BOO BOO RECORDS SAN LUIS OBISCA")
                   (A " SAN LUIS OBIS CA ")
-                  (T -62.60)))
+                  (T -62.60)
+                  (Split ())))
 
   (check-equal? ((parse-line #f) "Lwadooda" )
                 '(L "wadooda"))
@@ -628,32 +692,53 @@ T-62.60"))
   (check-equal? ((parse-line #f) "N24323005347253020010308")
                 '(N "24323005347253020010308"))
 
-  (check-equal? (join-splits
-                 '((L "abc")
-                   (S "def")
+  (check-equal? (join-split-pairs
+                 '((S "def")
                    ($ -3)
                    (S "ghi")
                    ($ 9)))
-                '((L "abc")
-                  (Split "def" -3)
-                  (Split "ghi" 9)))
+                '(("def" -3)
+                  ("ghi" 9)))
 
   (check-equal? (break-caret-lines (list "abc" "^def" "ghi" "^^zz" "^"))
                 (list "abc" "^" "def" "ghi" "^" "^zz" "^"))
 
   (check-exn #px"expected: record without duplicate fields"
              (λ ()
-               (ensure-no-duplicates (list 'std
-                                           (list 'A "abc")
+               (ensure-no-duplicates (list (list 'A "abc")
                                            (list 'P "def")
                                            (list 'M "oeu")
                                            (list 'P "ddth")))))
 
-  (check-equal? (ensure-no-duplicates (list 'std
-                                            (list 'A "abc")
+  (check-equal? (ensure-no-duplicates (list (list 'A "abc")
                                             (list 'P "def")
                                             (list 'M "oeu")))
-                (list 'std
-                      (list 'A "abc")
+                (list (list 'A "abc")
                       (list 'P "def")
-                      (list 'M "oeu"))))
+                      (list 'M "oeu")))
+
+
+  (define split-example #<<|
+!Type:Cash
+T-6.95
+LPreApproved Payment Bill User Payment
+SPreApproved Payment Bill User Payment
+$-6.95
+SFee
+$0.00
+CX
+PConsumer Reports
+^
+|
+   )
+  
+  (check-equal?
+   (lines->records (regexp-split #px"\n" split-example) #f)
+   (list
+    (list
+     'std
+     '(T -6.95)
+     '(L "PreApproved Payment Bill User Payment")
+     '(C "X")
+     '(P "Consumer Reports")))
+   ))
