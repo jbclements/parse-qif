@@ -507,6 +507,12 @@
         [`(T ,amt) (~a "T"(cond [(string? amt) amt]
                                 [else (/ (exact->inexact (round (* amt 100))) 100)])
                        "\n")]
+        ;; splits get serialized in a nasty way.
+        [`(Split ,split-list)
+         (apply
+          string-append
+          (for/list : (Listof String) ([split (in-list split-list)])
+            (~a "S" (first split) "\n" "$" (second split) "\n")))]
         [`(,id ,content) (format "~a~a\n" id content)])
       port))
   (display "^\n" port))
@@ -741,4 +747,38 @@ PConsumer Reports
      '(L "PreApproved Payment Bill User Payment")
      '(C "X")
      '(P "Consumer Reports")))
-   ))
+   )
+
+  (check-equal?
+   (call-with-output-string
+    (λ (port)
+      (output-record '(std
+                       (T -6.95)
+                       (L "Explosives")
+                       (P "Larry the Lunatic")
+                       (Split ()))                     
+                     port)))
+   "T-6.95
+LExplosives
+PLarry the Lunatic
+^
+")
+  (check-equal?
+   (call-with-output-string
+    (λ (port)
+      (output-record '(std
+                       (T -6.95)
+                       (L "Explosives")
+                       (P "Larry the Lunatic")
+                       (Split (("Shipping" -3.95)
+                               ("Goods" -3))))                     
+                     port)))
+   "T-6.95
+LExplosives
+PLarry the Lunatic
+SShipping
+$-3.95
+SGoods
+$-3
+^
+"))
