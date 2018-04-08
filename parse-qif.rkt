@@ -9,8 +9,12 @@
                [string->date (String String -> Date)]
                [date->string (Date String -> String)])
 
-(define-runtime-path category-mapping-filename-path
-  "./category-mapping-filename.rktd")
+(define-runtime-path here ".")
+(define config-hash : (HashTable Symbol Any)
+  (cast (file->value (build-path here "config.rktd"))
+        (HashTable Symbol Any)))
+(define category-mapping-filename
+  (assert (hash-ref config-hash 'category-mapping-file) string?))
 
 ;; oh dear... it occurs to me that representing a record as a
 ;; hash table might actually make
@@ -561,8 +565,7 @@
 (define category-assoc
   (match
       (file->value
-       (string->path
-        (string-trim (file->string category-mapping-filename-path))))
+       (string->path category-mapping-filename))
     [(? category-assoc? ca) ca]
     [other (error 'category-assoc
                   "expected category assoc, got ~e"
