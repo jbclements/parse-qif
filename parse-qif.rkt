@@ -521,7 +521,9 @@
       port))
   (display "^\n" port))
 
-;; write the records to the given path
+;; write the records to the given path. In the case of investments,
+;; the string provides the name of the base account that the
+;; investment accounts extend. Bleah, QIF.
 (: write-records ((Listof QifRecord) (U 'bank
                                         (List 'investment
                                               String))
@@ -529,16 +531,24 @@
 (define (write-records records kind out-file)
   (call-with-output-file*
    out-file
-   (lambda ([port : Output-Port])
-     (match kind
+   (λ ([port : Output-Port])
+     (write-records-to-port records kind port))
+   #:exists 'truncate))
+
+(define (write-records-to-port [records : (Listof QifRecord)]
+                               [kind : (U 'bank
+                                          (List 'investment
+                                                String))]
+                               [port : Output-Port])
+  (match kind
        ['bank (displayln "!Type:Bank" port)]
        [(list 'investment account)
         (displayln "!Account" port)
         (displayln (~a "N" account) port)
-        (displayln "TInvst")])
-     (for ([record (in-list records)])
-       (output-record record port)))
-   #:exists 'truncate))
+        (displayln "TInvst" port)
+        (displayln "^" port)])
+  (for ([record (in-list records)])
+    (output-record record port)))
 
 ;; replace with plain old 'group-by':
 (: group-by-payee ((Listof QifRecord)
@@ -783,5 +793,48 @@ SShipping
 $-3.95
 SGoods
 $-3
+^
+" )
+
+  (check-equal?
+   (call-with-output-string
+    (λ ([port : Output-Port])
+      (write-records-to-port
+       '((investment
+          (Q 0.9)
+          (T 500)
+          (P "Purchase")
+          (N "BuyX")
+          (L "[Assets:Investments:Mutual Fund:Cash]")
+          (Y "FOO"))
+         (investment
+          (Q 0.897)
+          (T 100)
+          (P "Sale")
+          (N "SellX")
+          (L "[Assets:Investments:Mutual Fund:Cash]")
+          (Y "FOO")))
+       (list 'investment
+             "Assets:Investments:Mutual Fund")
+       port)))
+   "!Account
+NAssets:Investments:Mutual Fund
+TInvst
+^
+!Type:Invst
+Q0.9
+T500.0
+PPurchase
+NBuyX
+L[Assets:Investments:Mutual Fund:Cash]
+YFOO
+^
+!Type:Invst
+Q0.897
+T100.0
+PSale
+NSellX
+L[Assets:Investments:Mutual Fund:Cash]
+YFOO
 ^
 "))
