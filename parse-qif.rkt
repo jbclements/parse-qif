@@ -402,8 +402,7 @@
      (ann > (Index Index -> Boolean))
      #:key (inst length Any)))
   (for ([g (in-list groups)])
-    (when (< 1 (length g))
-      (printf ";; ~vx:\n" (length g)))
+    (printf ";; ~vx:\n" (length g))
     (map display-missing-payee (first g)))
   (void))
 
