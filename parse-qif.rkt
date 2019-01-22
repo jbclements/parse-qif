@@ -402,8 +402,11 @@
      (ann > (Index Index -> Boolean))
      #:key (inst length Any)))
   (for ([g (in-list groups)])
-    (printf ";; ~vx:\n" (length g))
-    (map display-missing-payee (first g)))
+    (when (< 1 (length g))
+      (printf ";; ~vx:\n" (length g)))
+    (map display-missing-payee (first g))
+    (when (< 1 (length g))
+      (printf "\n")))
   (void))
 
 ;; find a category by trying to match P, and then
@@ -448,8 +451,18 @@
     (if (null? category-assoc)
         #f
         (if (regexp-match (caar category-assoc) payee-str)
-            (cadar category-assoc)
+            (check-not-empty-string?
+             (cadar category-assoc)
+             payee-str)
             (loop (cdr category-assoc))))))
+
+(define (check-not-empty-string? [s : String]
+                                 [payee : String]) : String
+  (cond [(equal? s "")
+         (error 'check-not-empty-string
+                "expected nonempty category string for payee: ~e"
+                payee)]
+        [else s]))
 
 ;; add a category. If one is already present, discard it if it's 
 ;; empty or signal an error if it's not.
