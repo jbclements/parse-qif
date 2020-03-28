@@ -10,9 +10,14 @@
                [date->string (Date String -> String)])
 
 (define-runtime-path here ".")
+(define config-file-path (build-path here "config.rktd"))
 (define config-hash : (HashTable Symbol Any)
-  (cast (file->value (build-path here "config.rktd"))
-        (HashTable Symbol Any)))
+  (cond [(file-exists? config-file-path)
+         (cast (file->value config-file-path)
+               (HashTable Symbol Any))]
+        [else
+         (error 'parse-qif "expected to find config.rktd file at ~v"
+                config-file-path)]))
 (define category-mapping-filename
   (assert (hash-ref config-hash 'category-mapping-file) string?))
 
@@ -136,7 +141,24 @@
   (define record-string-lists
     (filter (lambda (x) (not (empty? x)))
             (split-at-elt "^" non-blank-lines)))
+  ;; detect parsing errors by finding files that are all one record
+  (when (= (length record-string-lists) 1)
+    (fprintf (current-error-port)
+             "WARNING: file contains only one record, probably needs runtime flag\n"))
+  ;; detect parsing errors by finding very long records
+  (define very-long-record-count
+    (count very-long-record? record-string-lists))
+  (when (< 0 very-long-record-count)
+    (error 'lines->records "expected not to find records longer\
+ than ~a lines, got: ~e"
+           very-long-record-len
+           (findf very-long-record? record-string-lists)))
   (map (parse-record remove-leading-hash?) record-string-lists))
+
+;; a record with this many lines is probably a parsing bug
+(define very-long-record-len 40)
+(define (very-long-record? [r : (Listof String)]) : Boolean
+  (<= very-long-record-len (length r)))
 
 ;; given whether to remove leading hashes, parse each line of a record
 (: parse-record (Boolean -> ((Listof String) -> QifRecord)))
