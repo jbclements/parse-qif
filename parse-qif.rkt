@@ -79,12 +79,14 @@
    (List QifLetter (U String Real))))
 (define-predicate qif-element? QifRecordElt)
 (define-type QifRecord (cons (U 'std 'investment) (Listof QifRecordElt)))
+(define-type PreCategoryAssoc (Listof (Pair String (Pair String Any))))
 (define-type CategoryAssoc (Listof (List String String)))
 
 ;; represents whether or not a transaction's payee or note matched a pattern
 (define-type MStatus (U 'matched 'unmatched))
 
 (define-predicate category-assoc? CategoryAssoc)
+(define-predicate pre-category-assoc? PreCategoryAssoc)
 (define-predicate qif-letter? QifLetter)
 
 (provide
@@ -610,7 +612,10 @@
   (match
       (file->value
        (string->path category-mapping-filename))
-    [(? category-assoc? ca) ca]
+    [(? pre-category-assoc? ca)
+     (map (λ ([los : (Pair String (Pair String Any))]) : (List String String)
+            (list (car los) (cadr los)))
+          ca)]
     [other (error 'category-assoc
                   "expected category assoc, got ~e"
                   other)]))
