@@ -9,4 +9,7 @@
    (list "parse-qif"
          "main.rkt"
          "parse a qif file, associate categories, write out again"
-         #f)))
+         #f)))(define deps '("base"
+               "rackunit-typed"
+               "srfi-lite-lib"
+               "typed-racket-lib"))
