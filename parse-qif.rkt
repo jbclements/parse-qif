@@ -88,6 +88,8 @@
 (define-predicate category-assoc? CategoryAssoc)
 (define-predicate pre-category-assoc? PreCategoryAssoc)
 (define-predicate qif-letter? QifLetter)
+(define-predicate qif-record-elts? (Listof QifRecordElt))
+(define-predicate qif-record? QifRecord)
 
 (provide
  read-records
@@ -105,7 +107,9 @@
  sort-by-has-category
  display-payees-of-unmatched
  QifRecord
- QifRecordElt)
+ QifRecordElt
+ qif-record-elts?
+ qif-record?)
 
 ;; given a filename and whether to remove leading hashes and
 ;; whether to split lines such as "^C*" into two lines,
@@ -421,14 +425,16 @@
 
 (define (display-payees-of-unmatched [rs : (Listof QifRecord)]) : Void
   (define groups
-    ((inst sort (Listof (Listof String)) Index)
-     (group-by (λ (x) x) (map payees-of-unmatched rs))
+    ((inst sort (Listof QifRecord) Index)
+     (group-by payees-of-unmatched rs)
      (ann > (Index Index -> Boolean))
      #:key (inst length Any)))
+  ;; first, show the amounts and dates...
+  (pretty-print groups)
   (for ([g (in-list groups)])
     (when (< 1 (length g))
       (printf ";; ~vx:\n" (length g)))
-    (map display-missing-payee (first g))
+    (map display-missing-payee (payees-of-unmatched (first g)))
     (when (< 1 (length g))
       (printf "\n")))
   (void))
