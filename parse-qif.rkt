@@ -400,7 +400,7 @@
 (: display-missing-payee (String -> Void))
 (define (display-missing-payee payee)
   (when (not (member payee vapid-payees))
-    (write (list (regexp-quote payee) "")) (newline)))
+    (write (list (string-append "^" (regexp-quote payee)) "")) (newline)))
 
 (define vapid-payees
   '("" "WITHDRAW" "TRANSFER" "FEE" "PURCHASE" "DEPOSIT" "DIVIDEND"))
