@@ -16,10 +16,12 @@
          (cast (file->value config-file-path)
                (HashTable Symbol Any))]
         [else
-         (error 'parse-qif "expected to find config.rktd file at ~v"
-                config-file-path)]))
+         (eprintf "expected to find config.rktd file at ~v\n" config-file-path)
+         (eprintf "... but continuing in case this is headless CI testing.\n")
+         (ann (hash) (HashTable Symbol Any))]))
+
 (define category-mapping-filename
-  (assert (hash-ref config-hash 'category-mapping-file) string?))
+  (hash-ref config-hash 'category-mapping-file (λ () #f)))
 
 ;; oh dear... it occurs to me that representing a record as a
 ;; hash table might actually make
@@ -615,16 +617,23 @@
 
 (: category-assoc CategoryAssoc)
 (define category-assoc
-  (match
-      (file->value
-       (string->path category-mapping-filename))
-    [(? pre-category-assoc? ca)
-     (map (λ ([los : (Pair String (Pair String Any))]) : (List String String)
-            (list (car los) (cadr los)))
-          ca)]
-    [other (error 'category-assoc
-                  "expected category assoc, got ~e"
-                  other)]))
+  (cond
+    [(not category-mapping-filename)
+     '()]
+    [(string? category-mapping-filename)
+     (match
+         (file->value
+          (string->path category-mapping-filename))
+       [(? pre-category-assoc? ca)
+        (map (λ ([los : (Pair String (Pair String Any))]) : (List String String)
+               (list (car los) (cadr los)))
+             ca)]
+       [other (error 'category-assoc
+                     "expected category assoc, got ~e"
+                     other)])]
+    [else
+     (error "category mapping filename was neither #f nor a string: ~v"
+            category-mapping-filename)]))
 
 ;; discard records with these M fields... they involve splits, and shouldn't
 ;; be added automatically

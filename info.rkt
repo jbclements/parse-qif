@@ -2,7 +2,7 @@
 
 (define name "parse-qif")
 (define collection "parse-qif")
-(define version "2018-03-02")
+(define version "1.0")
 
 (define raco-commands
   (list
@@ -10,3 +10,9 @@
          "main.rkt"
          "parse a qif file, associate categories, write out again"
          #f)))
+
+(define deps
+  "base"
+  "rackunit-typed"
+  "srfi-lite-lib"
+  "typed-racket-lib")
