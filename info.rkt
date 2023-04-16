@@ -12,7 +12,7 @@
          #f)))
 
 (define deps
-  "base"
-  "rackunit-typed"
-  "srfi-lite-lib"
-  "typed-racket-lib")
+  (list "base"
+        "rackunit-typed"
+        "srfi-lite-lib"
+        "typed-racket-lib"))
