@@ -108,6 +108,7 @@
  group-by-payee
  sort-by-has-category
  display-payees-of-unmatched
+ add-stringy-field
  QifRecord
  QifRecordElt
  qif-record-elts?
@@ -500,16 +501,30 @@
 ;; empty or signal an error if it's not.
 (: add-category-field (String QifRecord -> QifRecord))
 (define (add-category-field new-category record)
+  (add-stringy-field/qifrecord 'L new-category record #f))
+
+;; add a category. If one is already present, discard it if it's 
+;; empty or signal an error if it's not.
+(: add-stringy-field/qifrecord (QifLetter String QifRecord Boolean -> QifRecord))
+(define (add-stringy-field/qifrecord letter new-value record force?)
+  (cons (first record) (add-stringy-field letter new-value (rest record) force?)))
+
+(define (add-stringy-field [letter : QifLetter] [new-value : String]
+                           [elts : (Listof QifRecordElt)]
+                           [force? : Boolean #f])
+  : (Listof QifRecordElt)
   (define-values (existing-category others)
-    (partition (λ ([f : QifRecordElt]) (eq? (first f) 'L)) (rest record)))
+    (partition (λ ([f : QifRecordElt]) (eq? (first f) letter)) elts))
+  (define new-element (list letter new-value))
   (match existing-category
     ;; no existing category:
-    [(list) (cons (first record) (cons `(L ,new-category) others))]
+    [(list) (cons new-element others)]
     ;; existing but blank:
-    [(list (list 'L "")) (cons (first record) (cons `(L ,new-category) others))]
-    [other (raise-argument-error 'add-category-field
-                                 "record with blank or no category field"
-                                 1 new-category record)]))
+    [(list (list _ "")) (cons new-element others)]
+    [other (cond [force? (cons new-element others)]
+                 (raise-argument-error 'add-stringy-field
+                                       (~a "record with blank or no '"letter" field")
+                                       1 new-value elts))]))
 
 ;; does this record have a non-blank category?
 (: has-category? (QifRecord -> Boolean))
